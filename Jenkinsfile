@@ -37,12 +37,10 @@ pipeline {
             steps {
                 script {
                     dir('release') {
-                        // Dosyanın içindeki varsayılan imajı lokal Nexus imaj adresiyle değiştiriyoruz
                         sh """
                             sed -i 's|image: gcr.io/google-samples/microservices-demo/frontend:.*|image: ${NEXUS_REG}/online-boutique-frontend:${env.BUILD_NUMBER}|g' kubernetes-manifests.yaml
                         """
                         
-                        // Güncellenen dosyayı GitHub repomuza geri pushluyoruz
                         withCredentials([usernamePassword(credentialsId: "${env.GIT_CRED_ID}", usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
                             sh """
                                 git config user.email "jenkins@local.com"
@@ -63,30 +61,32 @@ pipeline {
                     dir('release') {
                         echo 'Uzaktaki Kubernetes kümesine bağlanılıyor ve dağıtım başlatılıyor...'
                         
-                        sh """
-                            # 1. Eğer ortamda kubectl yoksa, resmi kaynaktan indir ve yetkilendir
-                            if ! command -v kubectl &> /dev/null; then
-                                echo "kubectl bulunamadı, çalışma alanına dinamik olarak indiriliyor..."
-                                curl -LO "https://dl.k8s.io/release/\$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-                                chmod +x ./kubectl
-                                KUBECTL_CMD="./kubectl"
-                            else
-                                KUBECTL_CMD="kubectl"
-                            fi
+                        // Jenkins'e yüklediğiniz 'kubeconfig-credentials' ID'li dosyayı çağırıyoruz
+                        withCredentials([file(credentialsId: 'kubeconfig-credentials', variable: 'SECURE_KUBECONFIG')]) {
+                            sh """
+                                # 1. Eğer ortamda kubectl yoksa indir ve yetkilendir
+                                if ! command -v kubectl &> /dev/null; then
+                                    echo "kubectl bulunamadı, çalışma alanına dinamik olarak indiriliyor..."
+                                    curl -LO "https://dl.k8s.io/release/\$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+                                    chmod +x ./kubectl
+                                    KUBECTL_CMD="./kubectl"
+                                else
+                                    KUBECTL_CMD="kubectl"
+                                fi
 
-                            # 2. Jenkins'in ağımızı manipüle eden tüm proxy yapılandırmalarını sıfırlıyoruz
-                            unset HTTP_PROXY
-                            unset HTTPS_PROXY
-                            unset http_proxy
-                            unset https_proxy
-                            
-                            export NO_PROXY="127.0.0.1,localhost,192.168.65.129,192.168.65.128"
-                            export no_proxy="127.0.0.1,localhost,192.168.65.129,192.168.65.128"
+                                # 2. Proxy temizliği ile döngüleri engelle
+                                unset HTTP_PROXY
+                                unset HTTPS_PROXY
+                                unset http_proxy
+                                unset https_proxy
+                                
+                                export NO_PROXY="127.0.0.1,localhost,192.168.65.129,192.168.65.128"
+                                export no_proxy="127.0.0.1,localhost,192.168.65.129,192.168.65.128"
 
-                            # 3. Şema doğrulamasını kapatarak ve kubeconfig dosyasını net göstererek apply komutunu çalıştır
-                            \$KUBECTL_CMD --kubeconfig=/var/jenkins_home/.kube/config apply -f kubernetes-manifests.yaml --validate=false
-                        """
-                        
+                                # 3. Jenkins'in geçici dizine çıkardığı güvenli kubeconfig'i besleyerek apply et
+                                \$KUBECTL_CMD --kubeconfig=\${SECURE_KUBECONFIG} apply -f kubernetes-manifests.yaml --validate=false
+                            """
+                        }
                         echo 'Dağıtım komutu uzaktaki kümeye başarıyla iletildi!'
                     }
                 }
