@@ -4,10 +4,10 @@ pipeline {
     environment {
         NEXUS_REG      = '192.168.65.128:8082'
         NEXUS_AUTH_USR = 'admin'
-        NEXUS_AUTH_PSW = 'Qwer4321/' // Önceki adımda çalışan şifreniz
+        NEXUS_AUTH_PSW = 'Sifreniz' // Nexus şifreniz
         
-        // Jenkins Credentials içerisine yükleyeceğiniz Kubeconfig ID'si
-        KUBE_CONFIG    = credentials('kubernetes-config')
+        // GitHub'a push yapabilmek için Jenkins'e eklediğiniz Credential ID'si
+        GIT_CRED_ID    = 'github-credentials' 
     }
     
     stages {
@@ -35,25 +35,25 @@ pipeline {
             }
         }
         
-        stage('4. Kubernetes Test Ortamına Deploy Et') {
+        stage('4. Kubernetes Manifestosunu Güncelle (GitOps)') {
             steps {
                 script {
-                    // Üretilen dinamik imaj adını tam yol olarak tanımlıyoruz
-                    def total_image_path = "${NEXUS_REG}/online-boutique-frontend:${env.BUILD_NUMBER}"
-                    
-                    // Kubernetes deployment güncelleme komutu ($KUBE_CONFIG Jenkins tarafından otomatik çözülür)
+                    // Ana dizindeki hazır 'kubernetes-manifests.yaml' dosyasının içindeki 
+                    // frontend imaj etiketini sed komutuyla dinamik olarak güncelliyoruz.
                     sh """
-                        kubectl set image deployment/frontend frontend=${total_image_path} \
-                        --namespace=test \
-                        --kubeconfig=${KUBE_CONFIG}
+                        sed -i 's|image: gcr.io/google-samples/microservices-demo/frontend:.*|image: ${NEXUS_REG}/online-boutique-frontend:${env.BUILD_NUMBER}|g' kubernetes-manifests.yaml
                     """
                     
-                    // Deployment'ın başarıyla tamamlanmasını (Rollout) takip ediyoruz
-                    sh """
-                        kubectl rollout status deployment/frontend \
-                        --namespace=test \
-                        --kubeconfig=${KUBE_CONFIG}
-                    """
+                    // Güncellenen hazır dosyayı GitHub'a geri pushluyoruz
+                    withCredentials([usernamePassword(credentialsId: "${env.GIT_CRED_ID}", usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
+                        sh """
+                            git config user.email "jenkins@local.com"
+                            git config user.name "Jenkins CI"
+                            git add kubernetes-manifests.yaml
+                            git commit -m "Automated CD: Frontend image updated to version ${env.BUILD_NUMBER} [skip ci]"
+                            git push https://${GIT_USER}:${GIT_TOKEN}@github.com/ozkzrl/microservices-demo.git HEAD:main
+                        """
+                    }
                 }
             }
         }
