@@ -5,7 +5,7 @@ pipeline {
         NEXUS_REG    = '192.168.65.128:8082'
         GIT_CRED_ID  = 'github-credentials'
         
-        // Jenkins'in localhost proxy ağ döngüsüne girmesini engelleyen muafiyetler
+        // Jenkins'in iç ağ yönlendirmelerini bypass etmek için proxy muafiyetleri
         NO_PROXY     = '127.0.0.1,localhost,192.168.65.129'
         no_proxy     = '127.0.0.1,localhost,192.168.65.129'
     }
@@ -78,12 +78,12 @@ pipeline {
                                 KUBECTL_CMD="kubectl"
                             fi
 
-                            # 2. Tamamen yalıtılmış temiz kabukta komutu uzak kümeye gönder
+                            # 2. --validate=false ile Jenkins'in sahte login yönlendirmesini/OpenAPI şema hatasını bypass ediyoruz
                             env -i HOME=${HOME} PATH=${PATH}:. \
                             KUBECONFIG=/var/jenkins_home/.kube/config \
                             NO_PROXY=${env.NO_PROXY} \
                             no_proxy=${env.no_proxy} \
-                            \$KUBECTL_CMD apply -f kubernetes-manifests.yaml
+                            \$KUBECTL_CMD apply -f kubernetes-manifests.yaml --validate=false
                         """
                         
                         echo 'Dağıtım komutu uzaktaki kümeye başarıyla iletildi!'
