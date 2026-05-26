@@ -4,7 +4,7 @@ pipeline {
     environment {
         NEXUS_REG      = '192.168.65.128:8082'
         NEXUS_AUTH_USR = 'admin'
-        NEXUS_AUTH_PSW = 'Sifreniz' // Nexus şifreniz
+        NEXUS_AUTH_PSW = 'Qwer4321/' // Nexus şifreniz
         
         // GitHub'a push yapabilmek için Jenkins'e eklediğiniz Credential ID'si
         GIT_CRED_ID    = 'github-credentials' 
