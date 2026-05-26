@@ -29,24 +29,26 @@ pipeline {
             }
         }
 
-       stage('3. Nexus Registry'e Gönder (Push)') {
+stage("3. Nexus Registry'e Gönder (Push)") {
     steps {
         echo 'Üretilen Docker imajı yerel Nexus depomuza gönderiliyor...'
         script {
-            // "nexus-credentials" id'li Jenkins kaydından kullanıcı adı ve şifreyi güvenli alıyoruz
+            // Jenkins Credentials ID'nizin 'nexus-credentials' olduğundan emin olun
             withCredentials([usernamePassword(credentialsId: 'nexus-credentials', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
-                // Önce Nexus'a login oluyoruz
+                
+                // Güvenli şekilde Nexus Docker Registry'e login oluyoruz
                 sh "echo '${NEXUS_PASS}' | docker login 192.168.65.128:8082 -u ${NEXUS_USER} --password-stdin"
                 
-                // Ardından push işlemini gerçekleştiriyoruz
-                sh "docker push 192.168.65.128:8082/online-boutique-frontend:5"
+                // İmajı push ediyoruz (Build numarası Jenkins tarafından otomatik verilir, dinamik olması için env.BUILD_NUMBER kullandık)
+                sh "docker push 192.168.65.128:8082/online-boutique-frontend:${env.BUILD_NUMBER}"
                 
-                // Güvenlik için işimiz bittiğinde login oturumunu kapatıyoruz
+                // İzin kalıntısı kalmaması için logout oluyoruz
                 sh "docker logout 192.168.65.128:8082"
             }
         }
     }
 }
+
         stage('4. Kubernetes Test Ortamına Deploy Et') {
             steps {
                 echo 'K3s Test Cluster\'ı üzerinde canlıya alınıyor...'
