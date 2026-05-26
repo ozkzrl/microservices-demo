@@ -5,7 +5,7 @@ pipeline {
         NEXUS_REG    = '192.168.65.128:8082'
         GIT_CRED_ID  = 'github-credentials'
         
-        // YENİ: Jenkins'in localhost proxy ağ döngüsüne girmesini engelleyen muafiyetler
+        // Jenkins'in localhost proxy ağ döngüsüne girmesini engelleyen muafiyetler
         NO_PROXY     = '127.0.0.1,localhost,192.168.65.129'
         no_proxy     = '127.0.0.1,localhost,192.168.65.129'
     }
@@ -61,21 +61,29 @@ pipeline {
             }
         }
 
-        // YENİ AŞAMA: Güncellenen manifestoyu uzaktaki K8s kümesine otomatik uygula (CD)
         stage('5. Kubernetes Kümesine Otomatik Dağıt (Deploy)') {
             steps {
                 script {
                     dir('release') {
                         echo 'Uzaktaki Kubernetes kümesine bağlanılıyor ve dağıtım başlatılıyor...'
                         
-                        // env -i ile kabuğu tamamen yalıtarak proxy karmaşasını kesin olarak engelliyoruz
-                        // control-plane üzerinde elle oluşturup test ettiğimiz .kube/config dosyasını temel alıyoruz
                         sh """
-                            env -i HOME=${HOME} PATH=${PATH} \
-                            KUBECONFIG=${HOME}/.kube/config \
+                            # 1. Eğer ortamda kubectl yoksa, resmi kaynaktan hemen indir ve yetkilendir
+                            if ! command -v kubectl &> /dev/null; then
+                                echo "kubectl bulunamadı, çalışma alanına dinamik olarak indiriliyor..."
+                                curl -LO "https://dl.k8s.io/release/\$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+                                chmod +x ./kubectl
+                                KUBECTL_CMD="./kubectl"
+                            else
+                                KUBECTL_CMD="kubectl"
+                            fi
+
+                            # 2. Tamamen yalıtılmış temiz kabukta komutu uzak kümeye gönder
+                            env -i HOME=${HOME} PATH=${PATH}:. \
+                            KUBECONFIG=/var/jenkins_home/.kube/config \
                             NO_PROXY=${env.NO_PROXY} \
                             no_proxy=${env.no_proxy} \
-                            kubectl apply -f kubernetes-manifests.yaml
+                            \$KUBECTL_CMD apply -f kubernetes-manifests.yaml
                         """
                         
                         echo 'Dağıtım komutu uzaktaki kümeye başarıyla iletildi!'
