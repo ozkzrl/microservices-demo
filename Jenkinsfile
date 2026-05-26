@@ -35,29 +35,30 @@ pipeline {
             }
         }
         
-        stage('4. Kubernetes Manifestosunu Güncelle (GitOps)') {
-            steps {
-                script {
-                    // Ana dizindeki hazır 'kubernetes-manifests.yaml' dosyasının içindeki 
-                    // frontend imaj etiketini sed komutuyla dinamik olarak güncelliyoruz.
+       stage('4. Kubernetes Manifestosunu Güncelle (GitOps)') {
+    steps {
+        script {
+            // Teşhis adımından sonra dosya hangi klasördeyse buraya yazıyoruz.
+            // Örnek olarak 'release' klasöründe olduğunu varsayalım:
+            dir('release') { 
+                
+                sh """
+                    sed -i 's|image: gcr.io/google-samples/microservices-demo/frontend:.*|image: ${NEXUS_REG}/online-boutique-frontend:${env.BUILD_NUMBER}|g' kubernetes-manifests.yaml
+                """
+                
+                withCredentials([usernamePassword(credentialsId: "${env.GIT_CRED_ID}", usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
                     sh """
-                        sed -i 's|image: gcr.io/google-samples/microservices-demo/frontend:.*|image: ${NEXUS_REG}/online-boutique-frontend:${env.BUILD_NUMBER}|g' kubernetes-manifests.yaml
+                        git config user.email "jenkins@local.com"
+                        git config user.name "Jenkins CI"
+                        git add kubernetes-manifests.yaml
+                        git commit -m "Automated CD: Frontend image updated to version ${env.BUILD_NUMBER} [skip ci]" || echo "Değişiklik yok"
+                        git push https://${GIT_USER}:${GIT_TOKEN}@github.com/ozkzrl/microservices-demo.git HEAD:main
                     """
-                    
-                    // Güncellenen hazır dosyayı GitHub'a geri pushluyoruz
-                    withCredentials([usernamePassword(credentialsId: "${env.GIT_CRED_ID}", usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
-                        sh """
-                            git config user.email "jenkins@local.com"
-                            git config user.name "Jenkins CI"
-                            git add kubernetes-manifests.yaml
-                            git commit -m "Automated CD: Frontend image updated to version ${env.BUILD_NUMBER} [skip ci]"
-                            git push https://${GIT_USER}:${GIT_TOKEN}@github.com/ozkzrl/microservices-demo.git HEAD:main
-                        """
-                    }
                 }
             }
         }
     }
+}
     
     post {
         failure {
