@@ -1,69 +1,49 @@
 pipeline {
     agent any
-
+    
     environment {
-        // Kendi altyapımıza ait değişkenleri tanımlıyoruz
-        NEXUS_REGISTRY = '192.168.65.128:8082'
-        IMAGE_NAME     = 'online-boutique-frontend'
-        IMAGE_TAG      = "${BUILD_NUMBER}" // Her build numarası bir etiket (örn: 2, 3, 4)
-        SERVICE_DIR    = 'src/frontend'    // Projede frontend kodlarının durduğu klasör
+        // Jenkins'teki kimlik bilgisini pipeline genelinde değişkenlere atıyoruz
+        NEXUS_REG = '192.168.65.128:8082'
+        NEXUS_AUTH = credentials('nexus-credentials') 
+        // Bu tanım otomatik olarak iki alt değişken üretir: NEXUS_AUTH_USR ve NEXUS_AUTH_PSW
     }
-
+    
     stages {
         stage('1. Kodu Temizle ve Hazırla') {
             steps {
-                echo 'Eski kalıntılar temizleniyor ve süreç başlıyor...'
-                // İlk adımda GitHub'dan gelen kodun doğruluğunu teyit ediyoruz
+                echo 'Eski kalıntılar temizleniyor...'
             }
         }
-
+        
         stage('2. Docker İmajı Derle (Build)') {
             steps {
-                echo "Frontend servisi için Docker imajı üretiliyor: ${IMAGE_NAME}:${IMAGE_TAG}"
-                script {
-                    // src/frontend klasörüne gidip oradaki Dockerfile'ı tetikliyoruz
-                    dir("${SERVICE_DIR}") {
-                        sh "docker build -t ${NEXUS_REGISTRY}/${IMAGE_NAME}:${IMAGE_TAG} ."
-                    }
+                dir('src/frontend') {
+                    sh "docker build -t ${NEXUS_REG}/online-boutique-frontend:${env.BUILD_NUMBER} ."
                 }
             }
         }
-
-stage("3. Nexus Registry'e Gönder (Push)") {
-    steps {
-        echo 'Üretilen Docker imajı yerel Nexus depomuza gönderiliyor...'
-        script {
-            // Jenkins Credentials ID'nizin 'nexus-credentials' olduğundan emin olun
-            withCredentials([usernamePassword(credentialsId: 'nexus-credentials', usernameVariable: 'NEXUS_USER', passwordVariable: 'NEXUS_PASS')]) {
-                
-                // Güvenli şekilde Nexus Docker Registry'e login oluyoruz
-                sh "echo '${NEXUS_PASS}' | docker login 192.168.65.128:8082 -u ${NEXUS_USER} --password-stdin"
-                
-                // İmajı push ediyoruz (Build numarası Jenkins tarafından otomatik verilir, dinamik olması için env.BUILD_NUMBER kullandık)
-                sh "docker push 192.168.65.128:8082/online-boutique-frontend:${env.BUILD_NUMBER}"
-                
-                // İzin kalıntısı kalmaması için logout oluyoruz
-                sh "docker logout 192.168.65.128:8082"
+        
+        stage("3. Nexus Registry'e Gönder (Push)") {
+            steps {
+                echo 'Üretilen Docker imajı yerel Nexus depomuza gönderiliyor...'
+                script {
+                    // Otomatik üretilen USR ve PSW değişkenlerini doğrudan sh içinde kullanıyoruz
+                    sh "echo '${NEXUS_AUTH_PSW}' | docker login ${NEXUS_REG} -u ${NEXUS_AUTH_USR} --password-stdin"
+                    sh "docker push ${NEXUS_REG}/online-boutique-frontend:${env.BUILD_NUMBER}"
+                    sh "docker logout ${NEXUS_REG}"
+                }
             }
         }
-    }
-}
-
+        
         stage('4. Kubernetes Test Ortamına Deploy Et') {
             steps {
-                echo 'K3s Test Cluster\'ı üzerinde canlıya alınıyor...'
-                script {
-                    // Burası bir sonraki adımda Kubernetes manifestolarını bağlayacağımız yer.
-                    echo 'İmaj hazır, Kubernetes dağıtımı tetiklenecek.'
-                }
+                echo 'Kubernetes ortamına deploy ediliyor...'
+                // Deployment adımları buraya gelecek
             }
         }
     }
-
+    
     post {
-        success {
-            echo 'Tebrikler Özkan Bey! Süreç başarıyla tamamlandı.'
-        }
         failure {
             echo 'Eyvah! Süreçte bir hata oluştu. Lütfen logları kontrol edin.'
         }
