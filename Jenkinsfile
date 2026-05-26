@@ -4,10 +4,6 @@ pipeline {
     environment {
         NEXUS_REG    = '192.168.65.128:8082'
         GIT_CRED_ID  = 'github-credentials'
-        
-        // Jenkins'in iç ağ yönlendirmelerini bypass etmek için proxy muafiyetleri
-        NO_PROXY     = '127.0.0.1,localhost,192.168.65.129'
-        no_proxy     = '127.0.0.1,localhost,192.168.65.129'
     }
     
     stages {
@@ -68,7 +64,7 @@ pipeline {
                         echo 'Uzaktaki Kubernetes kümesine bağlanılıyor ve dağıtım başlatılıyor...'
                         
                         sh """
-                            # 1. Eğer ortamda kubectl yoksa, resmi kaynaktan hemen indir ve yetkilendir
+                            # 1. Eğer ortamda kubectl yoksa, resmi kaynaktan indir ve yetkilendir
                             if ! command -v kubectl &> /dev/null; then
                                 echo "kubectl bulunamadı, çalışma alanına dinamik olarak indiriliyor..."
                                 curl -LO "https://dl.k8s.io/release/\$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
@@ -78,12 +74,17 @@ pipeline {
                                 KUBECTL_CMD="kubectl"
                             fi
 
-                            # 2. --validate=false ile Jenkins'in sahte login yönlendirmesini/OpenAPI şema hatasını bypass ediyoruz
-                            env -i HOME=${HOME} PATH=${PATH}:. \
-                            KUBECONFIG=/var/jenkins_home/.kube/config \
-                            NO_PROXY=${env.NO_PROXY} \
-                            no_proxy=${env.no_proxy} \
-                            \$KUBECTL_CMD apply -f kubernetes-manifests.yaml --validate=false
+                            # 2. Jenkins'in ağımızı manipüle eden tüm proxy yapılandırmalarını sıfırlıyoruz
+                            unset HTTP_PROXY
+                            unset HTTPS_PROXY
+                            unset http_proxy
+                            unset https_proxy
+                            
+                            export NO_PROXY="127.0.0.1,localhost,192.168.65.129,192.168.65.128"
+                            export no_proxy="127.0.0.1,localhost,192.168.65.129,192.168.65.128"
+
+                            # 3. Şema doğrulamasını kapatarak ve kubeconfig dosyasını net göstererek apply komutunu çalıştır
+                            \$KUBECTL_CMD --kubeconfig=/var/jenkins_home/.kube/config apply -f kubernetes-manifests.yaml --validate=false
                         """
                         
                         echo 'Dağıtım komutu uzaktaki kümeye başarıyla iletildi!'
@@ -95,7 +96,7 @@ pipeline {
     
     post {
         success {
-            echo "Tebrikler! Build #${env.BUILD_NUMBER} başarıyla Nexus'a pushlandı, Git reponuz güncellendi ve uzak K8s kümesinde canlıya alındı."
+            echo "Tebrikler! Build #${env.BUILD_NUMBER} başarıyla tamamlandı ve K8s kümesinde canlıya alındı."
         }
         failure {
             echo 'Eyvah! Süreçte bir hata oluştu. Lütfen logları kontrol edin.'
