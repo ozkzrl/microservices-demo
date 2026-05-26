@@ -36,11 +36,24 @@ pipeline {
         stage('4. Kubernetes Manifestosunu Güncelle (GitOps)') {
             steps {
                 script {
-                    echo "--- Jenkins Çalışma Alanındaki Klasör Yapısı ---"
-                    sh "ls -la" 
-                    
-                    echo "--- Dosyanın Tam Konumunu Arıyoruz ---"
-                    sh "find . -name '*manifests*.yaml' -o -name '*manifests*.yml'"
+                    // Dosyanın bulunduğu 'release' klasörünün içine giriyoruz
+                    dir('release') {
+                        // Dosyanın içindeki varsayılan google imaj adresini kendi lokal Nexus imaj adresimiz ve build numaramızla değiştiriyoruz
+                        sh """
+                            sed -i 's|image: gcr.io/google-samples/microservices-demo/frontend:.*|image: ${NEXUS_REG}/online-boutique-frontend:${env.BUILD_NUMBER}|g' kubernetes-manifests.yaml
+                        """
+                        
+                        // Güncellenen dosyayı GitHub repomuza geri pushluyoruz
+                        withCredentials([usernamePassword(credentialsId: "${env.GIT_CRED_ID}", usernameVariable: 'GIT_USER', passwordVariable: 'GIT_TOKEN')]) {
+                            sh """
+                                git config user.email "jenkins@local.com"
+                                git config user.name "Jenkins CI"
+                                git add kubernetes-manifests.yaml
+                                git commit -m "Automated CD: Frontend image updated to version ${env.BUILD_NUMBER} [skip ci]" || echo "Degisiklik yok"
+                                git push https://${GIT_USER}:${GIT_TOKEN}@github.com/ozkzrl/microservices-demo.git HEAD:main
+                            """
+                        }
+                    }
                 }
             }
         }
