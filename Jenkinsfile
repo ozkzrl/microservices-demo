@@ -2,8 +2,12 @@ pipeline {
     agent any
     
     environment {
-        NEXUS_REG   = '192.168.65.128:8082'
-        GIT_CRED_ID = 'github-credentials' 
+        NEXUS_REG    = '192.168.65.128:8082'
+        GIT_CRED_ID  = 'github-credentials'
+        
+        // YENİ: Jenkins'in localhost proxy ağ döngüsüne girmesini engelleyen muafiyetler
+        NO_PROXY     = '127.0.0.1,localhost,192.168.65.129'
+        no_proxy     = '127.0.0.1,localhost,192.168.65.129'
     }
     
     stages {
@@ -36,9 +40,8 @@ pipeline {
         stage('4. Kubernetes Manifestosunu Güncelle (GitOps)') {
             steps {
                 script {
-                    // Dosyanın bulunduğu 'release' klasörünün içine giriyoruz
                     dir('release') {
-                        // Dosyanın içindeki varsayılan google imaj adresini kendi lokal Nexus imaj adresimiz ve build numaramızla değiştiriyoruz
+                        // Dosyanın içindeki varsayılan imajı lokal Nexus imaj adresiyle değiştiriyoruz
                         sh """
                             sed -i 's|image: gcr.io/google-samples/microservices-demo/frontend:.*|image: ${NEXUS_REG}/online-boutique-frontend:${env.BUILD_NUMBER}|g' kubernetes-manifests.yaml
                         """
@@ -57,9 +60,35 @@ pipeline {
                 }
             }
         }
+
+        // YENİ AŞAMA: Güncellenen manifestoyu uzaktaki K8s kümesine otomatik uygula (CD)
+        stage('5. Kubernetes Kümesine Otomatik Dağıt (Deploy)') {
+            steps {
+                script {
+                    dir('release') {
+                        echo 'Uzaktaki Kubernetes kümesine bağlanılıyor ve dağıtım başlatılıyor...'
+                        
+                        // env -i ile kabuğu tamamen yalıtarak proxy karmaşasını kesin olarak engelliyoruz
+                        // control-plane üzerinde elle oluşturup test ettiğimiz .kube/config dosyasını temel alıyoruz
+                        sh """
+                            env -i HOME=${HOME} PATH=${PATH} \
+                            KUBECONFIG=${HOME}/.kube/config \
+                            NO_PROXY=${env.NO_PROXY} \
+                            no_proxy=${env.no_proxy} \
+                            kubectl apply -f kubernetes-manifests.yaml
+                        """
+                        
+                        echo 'Dağıtım komutu uzaktaki kümeye başarıyla iletildi!'
+                    }
+                }
+            }
+        }
     }
     
     post {
+        success {
+            echo "Tebrikler! Build #${env.BUILD_NUMBER} başarıyla Nexus'a pushlandı, Git reponuz güncellendi ve uzak K8s kümesinde canlıya alındı."
+        }
         failure {
             echo 'Eyvah! Süreçte bir hata oluştu. Lütfen logları kontrol edin.'
         }
